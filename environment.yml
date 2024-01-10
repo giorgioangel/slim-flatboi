@@ -1,0 +1,12 @@
+name: flatboi-env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy
+  - pillow
+  - pip
+  - pip:
+    - libigl
+    - open3d
