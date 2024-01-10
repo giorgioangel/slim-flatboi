@@ -9,20 +9,20 @@ Script to reflatten the scroll segments used in the Vesuvius Challenge ( https:/
 1. Clone or download this repository to your local machine.
 2. Create a Conda environment with the required dependencies:
 ```console
-foo@bar:~$ conda env create -f environment.yml
+conda env create -f environment.yml
 ```
 3. Activate the environment:
 ```console
-foo@bar:~$ conda activate flatboi-env
+conda activate flatboi-env
 ```
 ## Usage
 Run the script from the command line, specifying the path to your `.obj` file and the number of iterations as arguments:
 ```console
-foo@bar:~$ python flatboi.py <path_to_obj_file> <number_of_iterations>
+python flatboi.py <path_to_obj_file> <number_of_iterations>
 ```
 Example:
 ```console
-foo@bar:~$ python flatboi.py /path/to/segment.obj 20
+python flatboi.py /path/to/segment.obj 20
 ```
 
 ## Advice
