@@ -4,7 +4,9 @@ import argparse
 import numpy as np
 import open3d as o3d
 from PIL import Image
+from math import sqrt
 
+Image.MAX_IMAGE_PIXELS = None
 
 def print_array_to_file(array, file_path):
     # Open the file in write mode
@@ -26,7 +28,6 @@ class Flatboi:
         self.vertices = np.asarray(self.mesh.vertices, dtype=np.float64)
         self.triangles = np.asarray(self.mesh.triangles, dtype=np.int32)
         self.abf_uvs = np.asarray(self.mesh.triangle_uvs, dtype=np.float64)
-
     def generate_boundary(self):
         return igl.boundary_loop(self.triangles)
     
@@ -69,6 +70,8 @@ class Flatboi:
     def slim(self, initial_condition='original'):
         if initial_condition == 'original':
             bnd, bnd_uv, uv = self.original_ic()
+            l2, linf = self.stretch_metrics(uv)
+            print(f"Stretch metrics ABF L2: {l2:.5f}, Linf: {linf:.5f}", end="\n")
         elif initial_condition == 'harmonic':
             bnd, bnd_uv, uv = self.harmonic_ic()
 
@@ -80,6 +83,8 @@ class Flatboi:
             slim.solve(1)
             energies[i+1] = slim.energy()
 
+        l2, linf = self.stretch_metrics(slim.vertices())
+        print(f"Stretch metrics SLIM from {initial_condition} L2: {l2:.5f}, Linf: {linf:.5f}", end="\n")
         return slim.vertices(), energies
     
     @staticmethod
@@ -148,6 +153,63 @@ class Flatboi:
         self.mesh.triangle_uvs = o3d.utility.Vector2dVector(slim_uvs)
         o3d.io.write_triangle_mesh(obj_path, self.mesh)
 
+    def stretch_triangle(self, triangle_3d, triangle_2d):
+        q1, q2, q3 = triangle_3d
+
+        s1, t1 = triangle_2d[0]
+        s2, t2 = triangle_2d[1]
+        s3, t3 = triangle_2d[2]
+
+        A = ((s2-s1)*(t3-t1)-(s3-s1)*(t2-t1))/2
+        Ss = (q1*(t2-t3)+q2*(t3-t1)+q3*(t1-t2))/(2*A)
+        St = (q1*(s3-s2)+q2*(s1-s3)+q3*(s2-s1))/(2*A)
+        a = np.dot(Ss,Ss)
+        b = np.dot(Ss,St)
+        c = np.dot(St,St)
+
+        G = sqrt(((a+c)+sqrt((a-c)**2+4*b**2))/2)
+
+        L2 = sqrt((a+c)/2)
+
+        ab = np.linalg.norm(q2-q1)
+        bc = np.linalg.norm(q3-q2)
+        ca = np.linalg.norm(q1-q3)
+        s = (ab+bc+ca)/2
+        area = sqrt(s*(s-ab)*(s-bc)*(s-ca))
+
+        return L2, G, area
+    
+    def stretch_metrics(self, uv):
+        if len(uv.shape) == 2:
+            temp = uv.copy()
+            uv = np.zeros((self.triangles.shape[0],3,2), dtype=np.float64)
+            for t in range(self.triangles.shape[0]):
+                for v in range(self.triangles.shape[1]):
+                    uv[t,v,:] = temp[self.triangles[t,v]]
+
+        linf_all = np.zeros(self.triangles.shape[0])
+        area_all = np.zeros(self.triangles.shape[0])
+
+        nominator = 0
+        for t in range(self.triangles.shape[0]):
+            t3d = [self.vertices[self.triangles[t,i]] for i in range(self.triangles.shape[1])]
+            t2d = [uv[t,i] for i in range(self.triangles.shape[1])]
+
+            l2, linf, area = self.stretch_triangle(t3d, t2d)
+
+            linf_all[t] = linf
+            area_all[t] = area
+            nominator += (l2**2)*area_all[t]
+
+        l2_mesh = sqrt( nominator / np.sum(area_all))
+        linf_mesh = np.max(linf_all)
+
+        return l2_mesh, linf_mesh
+        
+
+
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Reflatten .obj")
@@ -178,7 +240,7 @@ if __name__ == "__main__":
         # trying different initial conditions
         original_uvs, original_energies = flatboi.slim(initial_condition='original')
         harmonic_uvs, harmonic_energies = flatboi.slim(initial_condition='harmonic')
-
+        
         if original_energies[-1] < harmonic_energies[-1]:
             print(f"Selected ABF initial condition")
             flatboi.save_img(original_uvs)
