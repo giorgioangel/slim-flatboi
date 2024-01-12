@@ -5,6 +5,7 @@ import numpy as np
 import open3d as o3d
 from PIL import Image
 from math import sqrt
+from tqdm import tqdm
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -70,8 +71,8 @@ class Flatboi:
     def slim(self, initial_condition='original'):
         if initial_condition == 'original':
             bnd, bnd_uv, uv = self.original_ic()
-            l2, linf = self.stretch_metrics(uv)
-            print(f"Stretch metrics ABF L2: {l2:.5f}, Linf: {linf:.5f}", end="\n")
+            l2, linf, area_error = self.stretch_metrics(uv)
+            print(f"Stretch metrics ABF L2: {l2:.5f}, Linf: {linf:.5f}, Area Error: {area_error:.5f}", end="\n")
         elif initial_condition == 'harmonic':
             bnd, bnd_uv, uv = self.harmonic_ic()
 
@@ -79,12 +80,12 @@ class Flatboi:
 
         energies = np.zeros(self.max_iter+1, dtype=np.float64)
         energies[0] = slim.energy()
-        for i in range(self.max_iter):
+        for i in tqdm(range(self.max_iter)):
             slim.solve(1)
             energies[i+1] = slim.energy()
 
-        l2, linf = self.stretch_metrics(slim.vertices())
-        print(f"Stretch metrics SLIM from {initial_condition} L2: {l2:.5f}, Linf: {linf:.5f}", end="\n")
+        l2, linf, area_error = self.stretch_metrics(slim.vertices())
+        print(f"Stretch metrics SLIM from {initial_condition} L2: {l2:.5f}, Linf: {linf:.5f}, , Area Error: {area_error:.5f}", end="\n")
         return slim.vertices(), energies
     
     @staticmethod
@@ -160,7 +161,7 @@ class Flatboi:
         s2, t2 = triangle_2d[1]
         s3, t3 = triangle_2d[2]
 
-        A = ((s2-s1)*(t3-t1)-(s3-s1)*(t2-t1))/2
+        A = ((s2-s1)*(t3-t1)-(s3-s1)*(t2-t1))/2 # 2d area
         Ss = (q1*(t2-t3)+q2*(t3-t1)+q3*(t1-t2))/(2*A)
         St = (q1*(s3-s2)+q2*(s1-s3)+q3*(s2-s1))/(2*A)
         a = np.dot(Ss,Ss)
@@ -175,9 +176,10 @@ class Flatboi:
         bc = np.linalg.norm(q3-q2)
         ca = np.linalg.norm(q1-q3)
         s = (ab+bc+ca)/2
-        area = sqrt(s*(s-ab)*(s-bc)*(s-ca))
+        area = sqrt(s*(s-ab)*(s-bc)*(s-ca)) # 3d area
 
-        return L2, G, area
+        
+        return L2, G, area, A
     
     def stretch_metrics(self, uv):
         if len(uv.shape) == 2:
@@ -189,22 +191,34 @@ class Flatboi:
 
         linf_all = np.zeros(self.triangles.shape[0])
         area_all = np.zeros(self.triangles.shape[0])
+        area2d_all = np.zeros(self.triangles.shape[0])
+        per_triangle_area = np.zeros(self.triangles.shape[0])
 
         nominator = 0
         for t in range(self.triangles.shape[0]):
             t3d = [self.vertices[self.triangles[t,i]] for i in range(self.triangles.shape[1])]
             t2d = [uv[t,i] for i in range(self.triangles.shape[1])]
 
-            l2, linf, area = self.stretch_triangle(t3d, t2d)
+            l2, linf, area, area2d = self.stretch_triangle(t3d, t2d)
 
             linf_all[t] = linf
             area_all[t] = area
+            area2d_all[t] = area2d
             nominator += (l2**2)*area_all[t]
-
+            
         l2_mesh = sqrt( nominator / np.sum(area_all))
         linf_mesh = np.max(linf_all)
 
-        return l2_mesh, linf_mesh
+        alpha = area_all/np.sum(area_all)
+        beta = area2d_all/np.sum(area2d_all)
+
+        for t in range(self.triangles.shape[0]):
+            if alpha[t] > beta[t]:
+                per_triangle_area[t] = 1 - beta[t]/alpha[t]
+            else:
+                per_triangle_area[t] = 1 - alpha[t]/beta[t]
+        
+        return l2_mesh, linf_mesh, np.mean(per_triangle_area)
         
 
 
