@@ -179,7 +179,7 @@ class Flatboi:
         area = sqrt(s*(s-ab)*(s-bc)*(s-ca)) # 3d area
 
         
-        return L2, G, area, A
+        return L2, G, area, abs(A)
     
     def stretch_metrics(self, uv):
         if len(uv.shape) == 2:
